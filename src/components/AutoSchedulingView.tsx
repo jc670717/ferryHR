@@ -12,12 +12,15 @@ import {
   ShieldAlert, 
   Clock, 
   ChevronLeft, 
-  ChevronRight,
-  Filter,
-  Check,
-  Edit2,
-  RefreshCw,
-  AlertCircle
+  ChevronRight, 
+  Filter, 
+  Check, 
+  Edit2, 
+  RefreshCw, 
+  AlertCircle,
+  Compass,
+  Layers,
+  Zap
 } from 'lucide-react';
 import { 
   Vessel, 
@@ -29,6 +32,7 @@ import {
   CrewRole
 } from '../types';
 import { generateAutoSchedule, validateSchedules, checkCrewQualification } from '../services/schedulingEngine';
+import { DailyTripDispatchModal } from './DailyTripDispatchModal';
 
 interface AutoSchedulingViewProps {
   selectedMonth: string;
@@ -65,6 +69,11 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
     existingEntry?: ScheduleEntry;
   } | null>(null);
 
+  // Daily Trip-by-Trip dispatch modal state
+  const [isTripModalOpen, setIsTripModalOpen] = useState<boolean>(false);
+  const [tripModalDate, setTripModalDate] = useState<string>(`${selectedMonth}-01`);
+  const [tripModalVesselId, setTripModalVesselId] = useState<string>(vessels[0]?.id || '');
+
   const [year, month] = selectedMonth.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const daysArray = Array.from({ length: daysInMonth }, (_, i) => {
@@ -74,6 +83,21 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
 
   const selectedVessel = vessels.find(v => v.id === selectedVesselId) || vessels[0];
   const isReadOnly = userRole === 'CREW';
+
+  // 處理班次級派工儲存
+  const handleSaveTripAssignments = (date: string, newEntries: ScheduleEntry[]) => {
+    // 移除當日所有舊排班，替換為班次派工產生的新排班
+    const remaining = schedules.filter(s => s.date !== date);
+    const updatedList = [...remaining, ...newEntries];
+    onUpdateSchedules(updatedList);
+    onAddAuditLog(
+      'TRIP_DISPATCH',
+      'SCHEDULE',
+      `TRIP-${date}`,
+      `${date} 每日每班次精準調度`,
+      `更新 ${date} 班次派工名冊 (共 ${newEntries.length} 位船員/航次)，同步連動工時與防疲勞計算`
+    );
+  };
 
   // 執行智慧自動排班
   const handleRunAutoSchedule = () => {
@@ -221,6 +245,21 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
               </button>
             </div>
 
+            {/* Daily Trip Dispatch Button */}
+            {!isReadOnly && (
+              <button
+                onClick={() => {
+                  setTripModalDate(selectedDate);
+                  setTripModalVesselId(selectedVesselId);
+                  setIsTripModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-lg shadow-sm transition-all transform hover:scale-[1.02]"
+              >
+                <Compass className="w-4 h-4 text-slate-950" />
+                每日每班次精準派工
+              </button>
+            )}
+
             {/* Run Auto Schedule Button */}
             {!isReadOnly && (
               <button
@@ -323,12 +362,27 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                       return (
                         <th
                           key={d}
-                          className={`py-2 px-1 text-center border-r border-slate-200 min-w-[42px] ${
+                          onClick={() => {
+                            if (!isReadOnly) {
+                              setTripModalDate(d);
+                              setTripModalVesselId(selectedVessel.id);
+                              setIsTripModalOpen(true);
+                            }
+                          }}
+                          className={`py-2 px-1 text-center border-r border-slate-200 min-w-[44px] group transition-colors ${
+                            !isReadOnly ? 'cursor-pointer hover:bg-amber-100/80' : ''
+                          } ${
                             isWeekend ? 'bg-slate-200/60 font-bold' : ''
                           } ${hasErr ? 'bg-amber-100/70 text-amber-900' : ''}`}
+                          title={!isReadOnly ? `點擊開啟 ${d} 每班次船員精準派工調度` : undefined}
                         >
                           <div className="text-[10px] text-slate-500">{['日','一','二','三','四','五','六'][dateObj.getDay()]}</div>
                           <div className="font-mono text-xs">{dayNum}</div>
+                          {!isReadOnly && (
+                            <div className="text-[8px] text-amber-700 opacity-0 group-hover:opacity-100 font-bold -mt-0.5">
+                              派工
+                            </div>
+                          )}
                         </th>
                       );
                     })}
@@ -409,19 +463,35 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
       {viewMode === 'BY_DATE' && (
         <div className="space-y-4">
           {/* Date Selector */}
-          <div className="flex items-center gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
-            <span className="text-xs font-bold text-slate-700">選擇指定檢視日期：</span>
-            <input
-              type="date"
-              value={selectedDate}
-              min={`${selectedMonth}-01`}
-              max={`${selectedMonth}-${daysInMonth.toString().padStart(2, '0')}`}
-              onChange={(e) => setSelectedDate(e.target.value)}
-              className="px-3 py-1.5 text-xs font-mono font-bold border border-slate-300 rounded-lg"
-            />
-            <span className="text-xs text-slate-500">
-              檢視全船隊 6 艘船舶在 {selectedDate} 之執勤、安全配置及休假船員狀態
-            </span>
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+            <div className="flex items-center gap-3">
+              <span className="text-xs font-bold text-slate-700">選擇指定檢視日期：</span>
+              <input
+                type="date"
+                value={selectedDate}
+                min={`${selectedMonth}-01`}
+                max={`${selectedMonth}-${daysInMonth.toString().padStart(2, '0')}`}
+                onChange={(e) => setSelectedDate(e.target.value)}
+                className="px-3 py-1.5 text-xs font-mono font-bold border border-slate-300 rounded-lg"
+              />
+              <span className="text-xs text-slate-500 hidden md:inline">
+                檢視全船隊 6 艘船舶在 {selectedDate} 之執勤、安全配置及休假船員狀態
+              </span>
+            </div>
+
+            {!isReadOnly && (
+              <button
+                onClick={() => {
+                  setTripModalDate(selectedDate);
+                  setTripModalVesselId('ALL');
+                  setIsTripModalOpen(true);
+                }}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold text-xs rounded-lg transition-colors shadow-xs"
+              >
+                <Compass className="w-4 h-4 text-slate-950" />
+                開啟 {selectedDate} 每班次派工調度
+              </button>
+            )}
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -662,6 +732,23 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
             </div>
           </div>
         </div>
+      )}
+
+      {/* Daily Trip-by-Trip Granular Dispatch Modal */}
+      {isTripModalOpen && (
+        <DailyTripDispatchModal
+          isOpen={isTripModalOpen}
+          initialDate={tripModalDate}
+          initialVesselId={tripModalVesselId}
+          selectedMonth={selectedMonth}
+          vessels={vessels}
+          crewList={crewList}
+          leaveRequests={leaveRequests}
+          schedules={schedules}
+          userRole={userRole}
+          onClose={() => setIsTripModalOpen(false)}
+          onSaveTripAssignments={handleSaveTripAssignments}
+        />
       )}
     </div>
   );

@@ -4,10 +4,13 @@ import {
   ScheduleEntry, 
   LeaveRequest, 
   ComplianceValidation, 
+  ComplianceViolationType,
   CrewRole, 
   CertificateRank,
-  ShiftType
+  ShiftType,
+  FerryTrip
 } from '../types';
+import { INITIAL_FERRY_TRIPS } from '../data/initialData';
 
 export interface QualificationCheckResult {
   isEligible: boolean;
@@ -22,6 +25,20 @@ export interface QualificationCheckResult {
     blacklistedInReq: { passed: boolean; message: string };
   };
 }
+
+/**
+ * 台灣船員法規與勞動法工時基準常數
+ */
+export const TAIWAN_MARITIME_LABOR_RULES = {
+  STANDARD_DAILY_HOURS: 8, // 船員法第29條：每日正常工作時間為8小時
+  MAX_DAILY_HOURS: 12, // 船員法第30條/勞基法第32條：每日工作時間連同延長工時不得超過12小時
+  MIN_DAILY_REST_HOURS: 10, // 船員法第31條第1項/STCW Section A-VIII/1：24小時內休息時間不得少於10小時
+  MIN_MAIN_REST_HOURS: 6, // 10小時休息中，主休息時段不得少於6小時
+  MAX_REST_INTERVAL_HOURS: 14, // 連續休息時段之間隔不得超過14小時
+  MIN_WEEKLY_REST_HOURS: 77, // 連續7日內總休息時間不得少於77小時
+  MAX_CONSECUTIVE_WORK_DAYS: 6, // 船員法第37條：每7日應有1日例假，嚴禁連續工作超過6天
+  MAX_MONTHLY_OVERTIME_HOURS: 46, // 勞動基準法第32條第2項：1個月延長工時總時數不得超過46小時
+};
 
 /**
  * 檢查船員是否符合特定船舶與職務之適任資格 (多維度交叉驗證引擎)
@@ -154,6 +171,10 @@ function isRankHigherOrEqual(crewRank: CertificateRank, acceptedRanks: Certifica
 
 /**
  * 完整檢核排班合規性 (自動排班與人工異動後即時執行)
+ * 涵蓋：
+ * 1. 船舶最低安全配額與職務證照適任性
+ * 2. 同日雙重排班 / 休假衝突 / 證照過期
+ * 3. 台灣船員法與勞基法工時限制 (單日最高12h、正常工時8h、24h內最低10h休息、連續出勤上限6天、單月加班上限46h)
  */
 export function validateSchedules(
   schedules: ScheduleEntry[],
@@ -168,12 +189,14 @@ export function validateSchedules(
   const crewMap = new Map(crewList.map(c => [c.id, c]));
   const vesselMap = new Map(vessels.map(v => [v.id, v]));
 
-  // 1. 篩選相關排班
+  // 1. 篩選有效排班
   const targetSchedules = targetDate 
     ? schedules.filter(s => s.date === targetDate && s.status !== 'CANCELLED')
     : schedules.filter(s => s.status !== 'CANCELLED');
 
-  // 按 日期 -> 船員 ID 分組，檢查「同一時間被排到兩艘船」
+  const allActiveSchedules = schedules.filter(s => s.status !== 'CANCELLED');
+
+  // 按 日期 -> 船員 ID 分組，檢查「同一時間被排到多艘船」以及計算「單日總工時」
   const dateCrewMap = new Map<string, ScheduleEntry[]>();
   for (const s of targetSchedules) {
     const key = `${s.date}_${s.crewId}`;
@@ -183,17 +206,65 @@ export function validateSchedules(
     dateCrewMap.get(key)!.push(s);
   }
 
+  // 檢查同日雙重排班與單日超時工時
   for (const [key, entries] of dateCrewMap.entries()) {
-    if (entries.length > 1) {
-      const [date, crewId] = key.split('_');
-      const crew = crewMap.get(crewId);
-      const shipNames = entries.map(e => vesselMap.get(e.vesselId)?.name || e.vesselId).join(' 與 ');
+    const [date, crewId] = key.split('_');
+    const crew = crewMap.get(crewId);
+    const crewName = crew?.name || crewId;
+
+    // 跨不同船舶排班 (且時段衝突)
+    const distinctVessels = Array.from(new Set(entries.map(e => e.vesselId)));
+    if (distinctVessels.length > 1) {
+      const shipNames = distinctVessels.map(vId => vesselMap.get(vId)?.name || vId).join(' 與 ');
       errors.push({
         type: 'DOUBLE_BOOKING',
         crewId,
-        crewName: crew?.name || crewId,
+        crewName,
         date,
-        message: `船員【${crew?.name || crewId}】在 ${date} 同時被排定於多艘船舶執勤 (${shipNames})`,
+        message: `船員【${crewName}】在 ${date} 同時被排定於多艘不同船舶執勤 (${shipNames})`,
+        detailRule: '船員當值作業規範：船員不得於同一值班日重疊指派於不同營運船舶',
+        severity: 'CRITICAL',
+      });
+    }
+
+    // 計算當日總工時
+    const totalDailyHours = entries.reduce((sum, e) => sum + (e.actualHours || e.plannedHours || 8), 0);
+    const restHours24h = Math.max(0, 24 - totalDailyHours);
+
+    // 嚴格違法：單日工時超過 12 小時 (船員法第30條 / 勞基法第32條)
+    if (totalDailyHours > TAIWAN_MARITIME_LABOR_RULES.MAX_DAILY_HOURS) {
+      errors.push({
+        type: 'OVERTIME_DAILY_12H',
+        crewId,
+        crewName,
+        date,
+        message: `【${crewName}】在 ${date} 當日排定工時達 ${totalDailyHours} 小時，超過法定上限 12 小時！`,
+        detailRule: '船員法第30條 / 勞基法第32條：每日工作時間連同延長工時，不得超過12小時',
+        severity: 'CRITICAL',
+      });
+    }
+
+    // 休息不足：24小時內休息未滿 10 小時 (船員法第31條第1項 / STCW A-VIII/1)
+    if (restHours24h < TAIWAN_MARITIME_LABOR_RULES.MIN_DAILY_REST_HOURS) {
+      errors.push({
+        type: 'INSUFFICIENT_24H_REST',
+        crewId,
+        crewName,
+        date,
+        message: `【${crewName}】在 ${date} 之24小時內休息僅 ${restHours24h.toFixed(1)} 小時 (不足法定 10 小時防疲勞基準)`,
+        detailRule: '船員法第31條第1項、STCW公約Section A-VIII/1：任一24小時內之休息時間不得少於10小時',
+        severity: 'CRITICAL',
+      });
+    }
+
+    // 每日超過 8 小時之正常工時提醒 (需計加班費)
+    if (totalDailyHours > TAIWAN_MARITIME_LABOR_RULES.STANDARD_DAILY_HOURS && totalDailyHours <= TAIWAN_MARITIME_LABOR_RULES.MAX_DAILY_HOURS) {
+      warnings.push({
+        type: 'DAILY_OVERTIME_WARNING',
+        crewId,
+        crewName,
+        date,
+        message: `${date}【${crewName}】工時達 ${totalDailyHours} 小時 (超過正常8小時基準，產生延長工時 ${(totalDailyHours - 8).toFixed(1)} 小時需核算加班加給)`,
       });
     }
   }
@@ -213,6 +284,8 @@ export function validateSchedules(
         vesselName: vessel?.name || s.vesselId,
         date: s.date,
         message: `船員【${crew?.name || s.crewId}】在 ${s.date} 已核准休假，卻被排定於【${vessel?.name}】執勤`,
+        detailRule: '出勤管理規範：經核准之輪休/特休假期間不得強制排定執勤班次',
+        severity: 'CRITICAL',
       });
     }
   }
@@ -233,11 +306,16 @@ export function validateSchedules(
         vesselName: vessel.name,
         date: s.date,
         message: `【${crew.name}】於【${vessel.name}】擔任【${s.role}】不符適任資格：${qual.reasons.join('；')}`,
+        detailRule: '船員服務規則及航海人員資格審查辦法',
+        severity: 'HIGH',
       });
     }
     for (const w of qual.warnings) {
       warnings.push({
         type: 'QUALIFICATION_WARNING',
+        crewId: crew.id,
+        crewName: crew.name,
+        date: s.date,
         message: `${s.date}【${vessel.name}】${crew.name}：${w}`,
       });
     }
@@ -253,7 +331,6 @@ export function validateSchedules(
     dateVesselMap.get(key)!.push(s);
   }
 
-  // 取得檢核涵蓋的日期清單
   const datesToCheck = targetDate 
     ? [targetDate] 
     : Array.from(new Set(targetSchedules.map(s => s.date))).sort();
@@ -272,6 +349,8 @@ export function validateSchedules(
           vesselName: vessel.name,
           date,
           message: `${date}【${vessel.name}】配置人數不足！目前 ${vesselSchedules.length} 人，法定安全最低要求 ${vessel.minSafetyManning} 人`,
+          detailRule: '航港局船舶最低安全配額表 (未達最低配額依法不得開航出港)',
+          severity: 'CRITICAL',
         });
       }
 
@@ -285,22 +364,109 @@ export function validateSchedules(
             vesselName: vessel.name,
             date,
             message: `${date}【${vessel.name}】缺少【${req.role}】！目前 ${matchingCount} 人，最低要求 ${req.minCount} 人`,
+            detailRule: `船舶安全配額：${req.role} 最低需 ${req.minCount} 人`,
+            severity: 'CRITICAL',
           });
         }
       }
     }
   }
 
+  // 5. 跨日檢查：連續工作天數 (不可連續 > 6 天) 與 單月累計加班時數 (不可超過 46h)
+  const crewConsecutiveDays = new Map<string, number>();
+  const crewMonthlyOvertime = new Map<string, number>();
+
+  // 整理所有涉及的日期按順序排序
+  const allDates = Array.from(new Set(allActiveSchedules.map(s => s.date))).sort();
+
+  // 為每位船員檢查全月連續工作天數
+  for (const crew of crewList) {
+    let currentConsecutive = 0;
+    let maxConsecutive = 0;
+    let totalMonthlyOvertime = 0;
+
+    for (const d of allDates) {
+      const isWorkingToday = allActiveSchedules.some(s => s.crewId === crew.id && s.date === d);
+      if (isWorkingToday) {
+        currentConsecutive++;
+        if (currentConsecutive > maxConsecutive) {
+          maxConsecutive = currentConsecutive;
+        }
+
+        // 計算當日加班時數
+        const dailyEntries = allActiveSchedules.filter(s => s.crewId === crew.id && s.date === d);
+        const dayHours = dailyEntries.reduce((sum, e) => sum + (e.actualHours || e.plannedHours || 8), 0);
+        if (dayHours > 8) {
+          totalMonthlyOvertime += (dayHours - 8);
+        }
+
+        // 當連續工作達到第 7 天時觸發違規
+        if (currentConsecutive === 7 && (!targetDate || targetDate === d)) {
+          errors.push({
+            type: 'CONSECUTIVE_7_DAYS',
+            crewId: crew.id,
+            crewName: crew.name,
+            date: d,
+            message: `【${crew.name}】在 ${d} 已連續出勤第 7 天！違反「每7日應有1日例假」強制規定`,
+            detailRule: '船員法第37條 / 勞基法第36條：勞工每七日中應有二日之休息，其中一日為例假，一日為休息日。不得連續排班工作超過6日',
+            severity: 'CRITICAL',
+          });
+        }
+      } else {
+        currentConsecutive = 0;
+      }
+    }
+
+    // 檢查月累計加班是否超過 46 小時
+    if (totalMonthlyOvertime > TAIWAN_MARITIME_LABOR_RULES.MAX_MONTHLY_OVERTIME_HOURS) {
+      errors.push({
+        type: 'MONTHLY_OVERTIME_LIMIT',
+        crewId: crew.id,
+        crewName: crew.name,
+        message: `【${crew.name}】當月累計加班延長工時達 ${totalMonthlyOvertime.toFixed(1)} 小時，超過法定上限 46 小時！`,
+        detailRule: '勞動基準法第32條第2項：雇主延長勞工之工作時間連同正常工作時間，一日不得超過十二小時；延長之工作時間，一個月不得超過四十六小時',
+        severity: 'HIGH',
+      });
+    } else if (totalMonthlyOvertime >= 36) {
+      warnings.push({
+        type: 'MONTHLY_OVERTIME_ALERT',
+        crewId: crew.id,
+        crewName: crew.name,
+        message: `【${crew.name}】當月累計加班達 ${totalMonthlyOvertime.toFixed(1)} 小時 (已接近 46 小時法定上限)`,
+      });
+    }
+  }
+
+  // 計算合規指數評分 (0~100)
+  const criticalErrorsCount = errors.filter(e => e.severity === 'CRITICAL').length;
+  const highErrorsCount = errors.filter(e => e.severity === 'HIGH').length;
+  const rawScore = 100 - (criticalErrorsCount * 15) - (highErrorsCount * 8) - (warnings.length * 1);
+  const overallScore = Math.max(0, Math.min(100, rawScore));
+
   return {
     isValid: errors.length === 0,
+    overallScore,
+    legalStandards: {
+      maxDailyHours: TAIWAN_MARITIME_LABOR_RULES.MAX_DAILY_HOURS,
+      standardDailyHours: TAIWAN_MARITIME_LABOR_RULES.STANDARD_DAILY_HOURS,
+      minDailyRestHours: TAIWAN_MARITIME_LABOR_RULES.MIN_DAILY_REST_HOURS,
+      minMainRestHours: TAIWAN_MARITIME_LABOR_RULES.MIN_MAIN_REST_HOURS,
+      maxConsecutiveDays: TAIWAN_MARITIME_LABOR_RULES.MAX_CONSECUTIVE_WORK_DAYS,
+      maxMonthlyOvertimeHours: TAIWAN_MARITIME_LABOR_RULES.MAX_MONTHLY_OVERTIME_HOURS,
+    },
     errors,
     warnings,
   };
 }
 
 /**
- * 智慧自動排班引擎 (Auto-Scheduling Engine)
- * 依照：船舶安全配置 ＋ 船員適任證書 ＋ 職務/等級 ＋ 可任職船舶 ＋ 出勤/休假
+ * 智慧自動排班引擎 (Smart Matsu Ferry Schedule Engine)
+ * 依照：
+ * 1. 馬祖海上交通訂位系統 (matsuebs.com) 班表 (高頻航線雙梯次輪班 Shift A/B、東西莒接駁、新臺馬長程夜航)
+ * 2. 船舶法定最低安全配額表
+ * 3. 船員適任資格與證書效期
+ * 4. 台灣船員法規 (嚴格防呆：單日不得超12h、連續出勤不得逾6天、保障24h內10h+休息、月加班限制)
+ * 5. 外籍固定船舶優先配置 ＋ 本國籍船員工時負載均衡
  */
 export function generateAutoSchedule(
   yearMonth: string, // YYYY-MM
@@ -316,18 +482,25 @@ export function generateAutoSchedule(
   const approvedLeaves = leaveRequests.filter(l => l.status === 'APPROVED');
   const operationalVessels = vessels.filter(v => v.status === 'OPERATIONAL');
 
-  // 計算每位船員本月已排班天數 (用於負載均衡)
+  // 追蹤每位船員的累計排班次數、當前連續工作天數、月累計工時
   const shiftCountMap = new Map<string, number>();
-  crewList.forEach(c => shiftCountMap.set(c.id, 0));
+  const consecutiveDaysMap = new Map<string, number>();
+  const monthlyOvertimeMap = new Map<string, number>();
+
+  crewList.forEach(c => {
+    shiftCountMap.set(c.id, 0);
+    consecutiveDaysMap.set(c.id, 0);
+    monthlyOvertimeMap.set(c.id, 0);
+  });
 
   for (let day = 1; day <= daysInMonth; day++) {
     const dayStr = day.toString().padStart(2, '0');
     const currentDate = `${yearMonth}-${dayStr}`;
 
-    // 當天已被指派的船員集合 (防同日雙重排班)
+    // 當天已被指派的船員集合 (防止同日雙重指派)
     const assignedCrewToday = new Set<string>();
 
-    // 1. 先指派外籍固定配置船員 (Foreign Fixed Crew)
+    // 1. 先處理外籍固定配置船員 (Foreign Fixed Crew)
     for (const vessel of operationalVessels) {
       const fixedForeignCrew = crewList.filter(
         c => c.nationality === 'FOREIGN' && 
@@ -338,11 +511,25 @@ export function generateAutoSchedule(
       for (const fCrew of fixedForeignCrew) {
         // 檢查當天是否請假
         const isOnLeave = approvedLeaves.some(l => l.crewId === fCrew.id && l.date === currentDate);
-        if (isOnLeave) continue;
+        if (isOnLeave) {
+          consecutiveDaysMap.set(fCrew.id, 0);
+          continue;
+        }
+
+        // 檢查連續出勤天數防呆 (若已連續工作6天，第7天強制輪休，落實每7天休1天例假)
+        const currentConsecutive = consecutiveDaysMap.get(fCrew.id) || 0;
+        if (currentConsecutive >= TAIWAN_MARITIME_LABOR_RULES.MAX_CONSECUTIVE_WORK_DAYS) {
+          consecutiveDaysMap.set(fCrew.id, 0); // 強制今日休假，計數歸零
+          continue;
+        }
 
         // 檢查資格
         const qual = checkCrewQualification(fCrew, vessel, fCrew.role, currentDate);
         if (!qual.isEligible) continue;
+
+        // 計算該船當日標準班次工時 (例如南北竿早班 6h, 莒光 7.5h, 新臺馬 8h)
+        const tripIdsForVessel = INITIAL_FERRY_TRIPS.filter(t => t.defaultVesselId === vessel.id).map(t => t.id);
+        const plannedHours = vessel.id === 'V1' ? 6.5 : (vessel.id === 'V2' ? 7.5 : 8);
 
         schedules.push({
           id: `SCH-${vessel.id}-${currentDate}-${fCrew.id}`,
@@ -351,24 +538,29 @@ export function generateAutoSchedule(
           routeId: vessel.routeId,
           role: fCrew.role,
           crewId: fCrew.id,
-          shift: 'VOYAGE',
+          shift: vessel.id === 'V1' ? 'SHIFT_A_MORNING' : 'VOYAGE',
+          tripIds: tripIdsForVessel.slice(0, 4),
+          dutyStartTime: vessel.id === 'V1' ? '06:30' : '07:30',
+          dutyEndTime: vessel.id === 'V1' ? '13:00' : '15:30',
+          breakHours: 1.5,
           isCover: false,
           status: 'SCHEDULED',
-          plannedHours: 8,
-          actualHours: 8,
+          plannedHours,
+          actualHours: plannedHours,
           isFixedAssignment: true,
-          notes: '外籍固定船舶排定',
+          notes: '外籍固定船舶排定 (符合法定輪休與工時上限)',
         });
 
         assignedCrewToday.add(fCrew.id);
         shiftCountMap.set(fCrew.id, (shiftCountMap.get(fCrew.id) || 0) + 1);
+        consecutiveDaysMap.set(fCrew.id, currentConsecutive + 1);
       }
     }
 
-    // 2. 針對各船舶的安全配置缺額，智慧指派本國籍船員 (以及可用外籍機動船員)
+    // 2. 針對各營運船舶的安全配置缺額，智慧指派合格本國籍船員與機動人員
     for (const vessel of operationalVessels) {
       for (const req of vessel.safetyRequirements) {
-        // 目前此船此職務已被固定外籍填補的人數
+        // 目前此船此職務已被指派的人數
         const alreadyAssignedCount = schedules.filter(
           s => s.date === currentDate && s.vesselId === vessel.id && s.role === req.role
         ).length;
@@ -377,7 +569,7 @@ export function generateAutoSchedule(
         if (neededCount <= 0) continue;
 
         for (let i = 0; i < neededCount; i++) {
-          // 找出所有符合資格的候選船員
+          // 找出所有符合資格且合規的候選船員
           const qualifiedCandidates = crewList.filter(crew => {
             // 必須不在當天已排班名單中
             if (assignedCrewToday.has(crew.id)) return false;
@@ -386,24 +578,47 @@ export function generateAutoSchedule(
             // 狀態必須為 ACTIVE
             if (crew.status !== 'ACTIVE') return false;
 
+            // 嚴格連續工作天數限制：不得超過6天
+            const consecDays = consecutiveDaysMap.get(crew.id) || 0;
+            if (consecDays >= TAIWAN_MARITIME_LABOR_RULES.MAX_CONSECUTIVE_WORK_DAYS) return false;
+
             // 檢查適任資格
             const qual = checkCrewQualification(crew, vessel, req.role, currentDate);
             return qual.isEligible;
           });
 
-          // 排序候選人：優先選擇本國籍、且當月排班天數較少者 (工時負載均衡)
+          // 排序候選人：
+          // 1. 本國籍優先
+          // 2. 當月排班總次數較少者優先 (工時負載均衡)
+          // 3. 當前連續工作天數較少者優先 (分散疲勞度)
           qualifiedCandidates.sort((a, b) => {
             const countA = shiftCountMap.get(a.id) || 0;
             const countB = shiftCountMap.get(b.id) || 0;
-            // 同職等優先
+            const consecA = consecutiveDaysMap.get(a.id) || 0;
+            const consecB = consecutiveDaysMap.get(b.id) || 0;
+
             const isExactRankA = a.role === req.role ? 0 : 1;
             const isExactRankB = b.role === req.role ? 0 : 1;
             if (isExactRankA !== isExactRankB) return isExactRankA - isExactRankB;
-            return countA - countB;
+
+            if (countA !== countB) return countA - countB;
+            return consecA - consecB;
           });
 
           if (qualifiedCandidates.length > 0) {
             const selectedCrew = qualifiedCandidates[0];
+            const currentConsec = consecutiveDaysMap.get(selectedCrew.id) || 0;
+
+            // 針對航線配置班次時段 (例如南北之星早班/午班輪替)
+            const isMorningShift = (day % 2 === 1) || (i % 2 === 0);
+            const shiftType: ShiftType = vessel.id === 'V1' 
+              ? (isMorningShift ? 'SHIFT_A_MORNING' : 'SHIFT_B_AFTERNOON')
+              : 'VOYAGE';
+
+            const dutyStart = vessel.id === 'V1' ? (isMorningShift ? '06:30' : '12:00') : '07:00';
+            const dutyEnd = vessel.id === 'V1' ? (isMorningShift ? '12:30' : '18:00') : '15:30';
+            const plannedHours = vessel.id === 'V1' ? 6.0 : (vessel.id === 'V2' ? 7.5 : 8.0);
+
             schedules.push({
               id: `SCH-${vessel.id}-${currentDate}-${selectedCrew.id}`,
               date: currentDate,
@@ -411,23 +626,34 @@ export function generateAutoSchedule(
               routeId: vessel.routeId,
               role: req.role,
               crewId: selectedCrew.id,
-              shift: 'VOYAGE',
+              shift: shiftType,
+              dutyStartTime: dutyStart,
+              dutyEndTime: dutyEnd,
+              breakHours: 1.5,
               isCover: false,
               status: 'SCHEDULED',
-              plannedHours: 8,
-              actualHours: 8,
-              notes: '自動排班推薦',
+              plannedHours,
+              actualHours: plannedHours,
+              notes: `依據馬祖船班班表自動排定 (${vessel.id === 'V1' ? (isMorningShift ? '早班梯次 06:30~12:30' : '午班梯次 12:00~18:00') : '全日值航梯次'})`,
             });
 
             assignedCrewToday.add(selectedCrew.id);
             shiftCountMap.set(selectedCrew.id, (shiftCountMap.get(selectedCrew.id) || 0) + 1);
+            consecutiveDaysMap.set(selectedCrew.id, currentConsec + 1);
           }
         }
       }
     }
+
+    // 當日未排班的船員，連續工作天數重設為 0
+    crewList.forEach(c => {
+      if (!assignedCrewToday.has(c.id)) {
+        consecutiveDaysMap.set(c.id, 0);
+      }
+    });
   }
 
-  // 產出全月檢核驗證報表
+  // 產出全月檢核驗證報表 (包含台灣船員法規合規度審查)
   const validation = validateSchedules(schedules, vessels, crewList, leaveRequests);
 
   return {

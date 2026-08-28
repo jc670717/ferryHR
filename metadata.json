@@ -1,6 +1,6 @@
 {
   "name": "船員管理系統 (Crew Management System)",
-  "description": "智慧型船員自動排班、安全配置審查、休假搶選與審核、工時統計、各項津貼計算、月度薪資結算與報表匯出全功能系統",
+  "description": "整合馬祖海上交通訂位系統(matsuebs)一日多班次班表與台灣船員法規工時防呆，支援智慧排班、安全配置、工時疲勞監控、津貼薪資全功能系統",
   "requestFramePermissions": [],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
 }

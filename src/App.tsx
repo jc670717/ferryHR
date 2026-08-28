@@ -35,6 +35,9 @@ import {
 import { 
   AdminSettingsView 
 } from './components/AdminSettingsView';
+import { 
+  MatsuFerryScheduleView 
+} from './components/MatsuFerryScheduleView';
 
 import { 
   initialVessels, 
@@ -292,6 +295,19 @@ export default function App() {
                 currentCrewId={userRole === 'CREW' ? currentCrewId : undefined}
                 onUpdateSchedules={(newScheds) => setSchedules(newScheds)}
                 onAddAuditLog={handleAddAuditLog}
+              />
+            )}
+
+            {activeTab === 'MATSU_FERRY' && (
+              <MatsuFerryScheduleView
+                routes={routes}
+                vessels={vessels}
+                crewList={crewList}
+                schedules={schedules}
+                compliance={compliance}
+                selectedMonth={selectedMonth}
+                userRole={userRole}
+                onNavigateToSchedule={() => setActiveTab('SCHEDULE')}
               />
             )}
 

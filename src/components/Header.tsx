@@ -13,7 +13,8 @@ import {
   CalendarCheck,
   UserCheck,
   Anchor,
-  Layers
+  Layers,
+  Compass
 } from 'lucide-react';
 import { UserRole, ComplianceValidation } from '../types';
 
@@ -36,6 +37,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
 }) => {
   const navItems = [
     { id: 'SCHEDULE', label: '智慧自動排班', icon: Calendar, roles: ['CREW', 'DISPATCHER', 'DISPATCH', 'HR', 'ADMIN'] },
+    { id: 'MATSU_FERRY', label: '馬祖班表與工時合規', icon: Compass, roles: ['CREW', 'DISPATCHER', 'DISPATCH', 'HR', 'ADMIN'] },
     { id: 'SAFETY', label: '船舶安全配置', icon: Ship, roles: ['CREW', 'DISPATCHER', 'DISPATCH', 'HR', 'ADMIN'] },
     { id: 'CREW', label: '船員適任資格', icon: Users, roles: ['DISPATCHER', 'DISPATCH', 'HR', 'ADMIN'] },
     { 

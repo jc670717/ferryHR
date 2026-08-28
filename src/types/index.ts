@@ -98,9 +98,32 @@ export interface Route {
   baseAllowancePerVoyage: number;
   monthlyFrequency: number;
   description: string;
+  matsuebsCode?: string; // e.g. "NB", "NJ", "XJ", "ND", "KL"
+  isHighFrequencyDaily?: boolean; // 是否為一日多班高頻航線
+  tripsPerDay?: number;
 }
 
-export type ShiftType = 'DAY' | 'NIGHT' | 'VOYAGE' | 'STANDBY';
+export type ShiftType = 'DAY' | 'NIGHT' | 'VOYAGE' | 'STANDBY' | 'SHIFT_A_MORNING' | 'SHIFT_B_AFTERNOON' | 'SPECIAL_VOYAGE';
+
+export interface FerryTrip {
+  id: string;
+  routeId: string;
+  tripCode: string; // e.g. "NB-0700", "NJ-0700", "XJ-0730", "TM-2230"
+  departurePort: string;
+  arrivalPort: string;
+  departureTime: string; // HH:mm
+  arrivalTime: string; // HH:mm
+  voyageDurationHours: number; // 純航程 (小時)
+  prepDurationHours: number; // 航前整備/點檢/登船工時 (小時)
+  postDurationHours: number; // 靠泊/下船/清消整備工時 (小時)
+  totalDutyHours: number; // 該班次實際計入工作時數
+  defaultVesselId: string;
+  shiftGroup: 'MORNING' | 'AFTERNOON' | 'NIGHT' | 'FULL_DAY';
+  operatingFrequency: 'DAILY' | 'ODD_DAYS' | 'EVEN_DAYS' | 'WEEKDAYS_ONLY';
+  fareRegularNTD: number;
+  status: 'NORMAL' | 'EXTRA' | 'SUSPENDED'; // 正常班次、加開班次、天候停航
+  note?: string;
+}
 
 export interface ScheduleEntry {
   id: string;
@@ -110,11 +133,15 @@ export interface ScheduleEntry {
   role: CrewRole;
   crewId: string;
   shift: ShiftType;
+  tripIds?: string[]; // 當日負責執行的特定船班航次 ID 清單
+  dutyStartTime?: string; // 當日值班開始時間 e.g. "06:30"
+  dutyEndTime?: string; // 當日值班結束時間 e.g. "13:30"
+  breakHours?: number; // 班次間隔休息時間 (小時)
   isCover: boolean; // 是否為代班
   coverForCrewId?: string; // 代替哪位船員
   status: 'SCHEDULED' | 'CONFIRMED' | 'COMPLETED' | 'CANCELLED';
-  plannedHours: number;
-  actualHours: number;
+  plannedHours: number; // 排定工時
+  actualHours: number; // 實際工時
   isFixedAssignment?: boolean;
   notes?: string;
 }
@@ -134,21 +161,58 @@ export interface LeaveRequest {
   reviewComment?: string;
 }
 
+export type ComplianceViolationType = 
+  | 'OVERTIME_DAILY_12H' // 每日工時超過 12 小時 (船員法嚴格違規)
+  | 'OVERTIME_DAILY_8H' // 每日正常工時超時 (需計加班費)
+  | 'INSUFFICIENT_24H_REST' // 24小時內休息不足 10 小時 (STCW/船員法)
+  | 'INSUFFICIENT_CONTINUOUS_REST' // 連續主休息未滿 6 小時
+  | 'CONSECUTIVE_7_DAYS' // 連續出勤超過 6 天 (違反每7天須1天例假)
+  | 'MONTHLY_OVERTIME_LIMIT' // 月累計加班超過 46 小時
+  | 'VOYAGE_TIME_CONFLICT' // 船班時段重疊衝突
+  | 'SAFETY_MANNING' // 船舶最低安全配額不足
+  | 'QUALIFICATION' // 職等/證書不符
+  | 'DOUBLE_BOOKING' // 同日跨船雙重排班
+  | 'ON_LEAVE' // 已核准休假卻被排班
+  | 'EXPIRED_CERT' // 證照過期失效
+  | 'REST_VIOLATION'; // 其他休息時間違規
+
 export interface ComplianceValidation {
   isValid: boolean;
+  overallScore: number; // 0~100 合規指數
+  legalStandards: {
+    maxDailyHours: number; // 12h
+    standardDailyHours: number; // 8h
+    minDailyRestHours: number; // 10h
+    minMainRestHours: number; // 6h
+    maxConsecutiveDays: number; // 6d
+    maxMonthlyOvertimeHours: number; // 46h
+  };
   errors: {
-    type: 'SAFETY_MANNING' | 'QUALIFICATION' | 'DOUBLE_BOOKING' | 'ON_LEAVE' | 'EXPIRED_CERT' | 'REST_VIOLATION';
+    type: ComplianceViolationType;
     vesselId?: string;
     vesselName?: string;
     crewId?: string;
     crewName?: string;
     date?: string;
     message: string;
+    detailRule?: string; // 法規法條依據 (例如「船員法第31條」、「STCW Regulation VIII/1」)
+    severity: 'CRITICAL' | 'HIGH' | 'MEDIUM';
   }[];
   warnings: {
     type: string;
+    crewId?: string;
+    crewName?: string;
+    date?: string;
     message: string;
   }[];
+  crewDailyMetrics?: Record<string, {
+    totalDailyDutyHours: number;
+    restHours24h: number;
+    consecutiveWorkDays: number;
+    isOvertime: boolean;
+    isOverLimit: boolean;
+    isRestCompliant: boolean;
+  }>;
 }
 
 export interface WorkHoursSummary {
