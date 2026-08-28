@@ -349,10 +349,10 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
             </div>
 
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs border-collapse">
+              <table className="w-full text-left text-xs border-collapse table-fixed">
                 <thead className="bg-slate-100 text-slate-800 font-semibold border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3 border-r border-slate-200 w-32 sticky left-0 bg-slate-100 z-10 text-xs font-bold">編制職務</th>
+                    <th className="py-2.5 px-3 border-r border-slate-200 w-36 min-w-36 max-w-36 sticky left-0 bg-slate-100 z-10 text-xs font-bold">編制職務</th>
                     {daysArray.map((d) => {
                       const dayNum = d.split('-')[2];
                       const dateObj = new Date(year, month - 1, Number(dayNum));
@@ -369,7 +369,7 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                               setIsTripModalOpen(true);
                             }
                           }}
-                          className={`py-2 px-1 text-center border-r border-slate-200 min-w-[52px] group transition-colors ${
+                          className={`py-2 px-1 text-center border-r border-slate-200 w-16 min-w-16 max-w-16 group transition-colors ${
                             !isReadOnly ? 'cursor-pointer hover:bg-amber-100/80' : ''
                           } ${
                             isWeekend ? 'bg-slate-200/60 font-bold' : ''
@@ -393,9 +393,11 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                     // 每一列可能需要展開多個位置 (例如水手 3 人 -> 產生 3 列)
                     return Array.from({ length: req.minCount }).map((_, slotIdx) => (
                       <tr key={`${req.id}-${slotIdx}`} className="hover:bg-slate-50/50">
-                        <td className="py-2.5 px-3 font-bold text-xs text-slate-800 border-r border-slate-200 bg-slate-50/80 sticky left-0 z-10 flex items-center justify-between">
-                          <span>{req.role} {req.minCount > 1 ? `#${slotIdx + 1}` : ''}</span>
-                          <span className="text-[11px] text-slate-500 font-medium">{req.requiredRank[0]}</span>
+                        <td className="py-2.5 px-3 font-bold text-xs text-slate-800 border-r border-slate-200 bg-slate-50/80 sticky left-0 z-10 w-36 min-w-36 max-w-36">
+                          <div className="flex items-center justify-between gap-1 overflow-hidden">
+                            <span className="truncate">{req.role} {req.minCount > 1 ? `#${slotIdx + 1}` : ''}</span>
+                            <span className="text-[11px] text-slate-500 font-medium shrink-0">{req.requiredRank[0]}</span>
+                          </div>
                         </td>
 
                         {daysArray.map((date) => {
@@ -424,12 +426,12 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                                   });
                                 }
                               }}
-                              className={`py-1.5 px-1 text-center border-r border-slate-200 transition-colors ${
+                              className={`p-1 text-center border-r border-slate-200 w-16 min-w-16 max-w-16 h-13 transition-colors ${
                                 !isReadOnly ? 'cursor-pointer hover:bg-blue-50/80' : ''
                               } ${isSelf ? 'bg-amber-100/60 ring-1 ring-amber-400' : ''}`}
                             >
                               {crew ? (
-                                <div className={`px-1.5 py-1.5 rounded-md text-xs font-bold leading-snug shadow-2xs ${
+                                <div className={`w-full h-11 px-1 py-1 rounded-md text-xs font-bold leading-snug shadow-2xs flex flex-col justify-center items-center overflow-hidden ${
                                   crew.nationality === 'TW'
                                     ? currentEntry.isCover
                                       ? 'bg-amber-100 text-amber-950 border border-amber-300'
@@ -438,13 +440,13 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                                 }`}
                                 title={`${crew.name} (${crew.rankLevel})${currentEntry.isCover ? ' [代班]' : ''}`}
                                 >
-                                  <div className="truncate font-bold text-xs sm:text-[13px]">{crew.name}</div>
+                                  <div className="w-full truncate font-bold text-xs sm:text-[13px] text-center">{crew.name}</div>
                                   {currentEntry.isCover && (
-                                    <div className="text-[10px] text-amber-800 font-extrabold">代班</div>
+                                    <div className="text-[10px] text-amber-800 font-extrabold leading-none mt-0.5">代班</div>
                                   )}
                                 </div>
                               ) : (
-                                <div className="text-xs text-slate-300 py-1 font-medium">-</div>
+                                <div className="w-full h-11 flex items-center justify-center text-xs text-slate-300 font-medium">-</div>
                               )}
                             </td>
                           );
