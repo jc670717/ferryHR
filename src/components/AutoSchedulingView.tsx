@@ -225,9 +225,9 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
             <div className="flex items-center bg-slate-100 p-1 rounded-lg border border-slate-200">
               <button
                 onClick={() => setViewMode('BY_VESSEL')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                className={`px-3.5 py-2 text-sm font-bold rounded-md transition-all ${
                   viewMode === 'BY_VESSEL'
-                    ? 'bg-white text-blue-600 shadow-xs'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -235,9 +235,9 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
               </button>
               <button
                 onClick={() => setViewMode('BY_DATE')}
-                className={`px-3 py-1.5 text-xs font-semibold rounded-md transition-all ${
+                className={`px-3.5 py-2 text-sm font-bold rounded-md transition-all ${
                   viewMode === 'BY_DATE'
-                    ? 'bg-white text-blue-600 shadow-xs'
+                    ? 'bg-white text-blue-700 shadow-xs'
                     : 'text-slate-600 hover:text-slate-900'
                 }`}
               >
@@ -253,7 +253,7 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                   setTripModalVesselId(selectedVesselId);
                   setIsTripModalOpen(true);
                 }}
-                className="flex items-center gap-1.5 px-3.5 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-xs font-bold rounded-lg shadow-sm transition-all transform hover:scale-[1.02]"
+                className="flex items-center gap-1.5 px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 text-sm font-bold rounded-lg shadow-sm transition-all transform hover:scale-[1.02]"
               >
                 <Compass className="w-4 h-4 text-slate-950" />
                 每日每班次精準派工
@@ -265,7 +265,7 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
               <button
                 id="run-auto-schedule-btn"
                 onClick={handleRunAutoSchedule}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all transform hover:scale-[1.02]"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white text-sm font-bold rounded-lg shadow-sm transition-all transform hover:scale-[1.02]"
               >
                 <Sparkles className="w-4 h-4 text-amber-300 animate-spin" />
                 一鍵智慧自動推薦排班
@@ -275,7 +275,7 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
         </div>
 
         {/* Real-time Compliance Status Banner */}
-        <div className={`mt-4 p-3.5 rounded-xl border flex items-start gap-3 ${
+        <div className={`mt-4 p-4 rounded-xl border flex items-start gap-3 ${
           compliance.isValid 
             ? 'bg-emerald-50/90 border-emerald-200 text-emerald-900'
             : 'bg-amber-50/90 border-amber-300 text-amber-950'
@@ -285,12 +285,12 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
           ) : (
             <ShieldAlert className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
           )}
-          <div className="text-xs flex-1">
-            <div className="font-bold flex items-center gap-2">
+          <div className="text-sm flex-1">
+            <div className="font-bold text-sm sm:text-base flex items-center gap-2">
               {compliance.isValid ? '全船隊排班 100% 符合船舶安全配置與適任資格規範' : `排班檢核提示：目前存在 ${compliance.errors.length} 項配置需注意`}
             </div>
             {!compliance.isValid && (
-              <ul className="mt-1.5 space-y-1 list-disc list-inside text-[11px] text-amber-800">
+              <ul className="mt-1.5 space-y-1 list-disc list-inside text-xs sm:text-sm text-amber-900">
                 {compliance.errors.slice(0, 3).map((err, i) => (
                   <li key={i}>{err.message}</li>
                 ))}
@@ -316,16 +316,16 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                 <button
                   key={v.id}
                   onClick={() => setSelectedVesselId(v.id)}
-                  className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-xs font-bold border transition-all whitespace-nowrap ${
+                  className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-bold border transition-all whitespace-nowrap ${
                     isSelected
                       ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
                       : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
                   }`}
                 >
-                  <Ship className={`w-3.5 h-3.5 ${isSelected ? 'text-white' : 'text-slate-500'}`} />
+                  <Ship className={`w-4 h-4 ${isSelected ? 'text-white' : 'text-slate-500'}`} />
                   <span>{v.name} ({v.tonnageCategory})</span>
                   {hasErrors && (
-                    <span className="w-2 h-2 rounded-full bg-amber-400" title="此船有待補足配置" />
+                    <span className="w-2.5 h-2.5 rounded-full bg-amber-400" title="此船有待補足配置" />
                   )}
                 </button>
               );
@@ -336,15 +336,15 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
           <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
             <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2">
               <div>
-                <h3 className="font-bold text-sm text-slate-800 flex items-center gap-2">
+                <h3 className="font-bold text-base text-slate-800 flex items-center gap-2">
                   【{selectedVessel.name}】{selectedMonth} 月度輪值班表
                 </h3>
-                <span className="text-xs text-slate-500">
-                  安全最低人數：{selectedVessel.minSafetyManning} 人 ‧ 編制職務：{selectedVessel.safetyRequirements.map(r => `${r.role} ${r.minCount}人`).join('、')}
+                <span className="text-xs sm:text-sm text-slate-600 mt-0.5 block">
+                  安全最低人數：<strong className="text-slate-800">{selectedVessel.minSafetyManning} 人</strong> ‧ 編制職務：{selectedVessel.safetyRequirements.map(r => `${r.role} ${r.minCount}人`).join('、')}
                 </span>
               </div>
-              <span className="text-[11px] text-slate-500">
-                點擊班表格子可進行「調班 / 換人 / 代班 / 調船」
+              <span className="text-xs sm:text-sm font-medium text-slate-600 bg-slate-200/70 px-3 py-1.5 rounded-lg">
+                💡 點擊班表格子可進行「調班 / 換人 / 代班 / 調船」
               </span>
             </div>
 
@@ -352,7 +352,7 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
               <table className="w-full text-left text-xs border-collapse">
                 <thead className="bg-slate-100 text-slate-800 font-semibold border-b border-slate-200">
                   <tr>
-                    <th className="py-2.5 px-3 border-r border-slate-200 w-28 sticky left-0 bg-slate-100 z-10">編制職務</th>
+                    <th className="py-2.5 px-3 border-r border-slate-200 w-32 sticky left-0 bg-slate-100 z-10 text-xs font-bold">編制職務</th>
                     {daysArray.map((d) => {
                       const dayNum = d.split('-')[2];
                       const dateObj = new Date(year, month - 1, Number(dayNum));
@@ -369,17 +369,17 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                               setIsTripModalOpen(true);
                             }
                           }}
-                          className={`py-2 px-1 text-center border-r border-slate-200 min-w-[44px] group transition-colors ${
+                          className={`py-2 px-1 text-center border-r border-slate-200 min-w-[52px] group transition-colors ${
                             !isReadOnly ? 'cursor-pointer hover:bg-amber-100/80' : ''
                           } ${
                             isWeekend ? 'bg-slate-200/60 font-bold' : ''
                           } ${hasErr ? 'bg-amber-100/70 text-amber-900' : ''}`}
                           title={!isReadOnly ? `點擊開啟 ${d} 每班次船員精準派工調度` : undefined}
                         >
-                          <div className="text-[10px] text-slate-500">{['日','一','二','三','四','五','六'][dateObj.getDay()]}</div>
-                          <div className="font-mono text-xs">{dayNum}</div>
+                          <div className="text-[11px] text-slate-500 font-medium">{['日','一','二','三','四','五','六'][dateObj.getDay()]}</div>
+                          <div className="font-mono text-xs font-bold">{dayNum}</div>
                           {!isReadOnly && (
-                            <div className="text-[8px] text-amber-700 opacity-0 group-hover:opacity-100 font-bold -mt-0.5">
+                            <div className="text-[9px] text-amber-700 opacity-0 group-hover:opacity-100 font-bold -mt-0.5">
                               派工
                             </div>
                           )}
@@ -393,9 +393,9 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                     // 每一列可能需要展開多個位置 (例如水手 3 人 -> 產生 3 列)
                     return Array.from({ length: req.minCount }).map((_, slotIdx) => (
                       <tr key={`${req.id}-${slotIdx}`} className="hover:bg-slate-50/50">
-                        <td className="py-2.5 px-3 font-semibold text-slate-800 border-r border-slate-200 bg-slate-50/80 sticky left-0 z-10 flex items-center justify-between">
+                        <td className="py-2.5 px-3 font-bold text-xs text-slate-800 border-r border-slate-200 bg-slate-50/80 sticky left-0 z-10 flex items-center justify-between">
                           <span>{req.role} {req.minCount > 1 ? `#${slotIdx + 1}` : ''}</span>
-                          <span className="text-[10px] text-slate-400 font-normal">{req.requiredRank[0]}</span>
+                          <span className="text-[11px] text-slate-500 font-medium">{req.requiredRank[0]}</span>
                         </td>
 
                         {daysArray.map((date) => {
@@ -429,22 +429,22 @@ export const AutoSchedulingView: React.FC<AutoSchedulingViewProps> = ({
                               } ${isSelf ? 'bg-amber-100/60 ring-1 ring-amber-400' : ''}`}
                             >
                               {crew ? (
-                                <div className={`px-1 py-1 rounded text-[10px] font-medium leading-tight ${
+                                <div className={`px-1.5 py-1.5 rounded-md text-xs font-bold leading-snug shadow-2xs ${
                                   crew.nationality === 'TW'
                                     ? currentEntry.isCover
-                                      ? 'bg-amber-100 text-amber-900 border border-amber-300 font-bold'
-                                      : 'bg-blue-100 text-blue-900 border border-blue-200'
-                                    : 'bg-purple-100 text-purple-900 border border-purple-200'
+                                      ? 'bg-amber-100 text-amber-950 border border-amber-300'
+                                      : 'bg-blue-100 text-blue-950 border border-blue-200'
+                                    : 'bg-purple-100 text-purple-950 border border-purple-200'
                                 }`}
                                 title={`${crew.name} (${crew.rankLevel})${currentEntry.isCover ? ' [代班]' : ''}`}
                                 >
-                                  <div className="truncate font-semibold">{crew.name}</div>
+                                  <div className="truncate font-bold text-xs sm:text-[13px]">{crew.name}</div>
                                   {currentEntry.isCover && (
-                                    <div className="text-[8px] text-amber-700">代班</div>
+                                    <div className="text-[10px] text-amber-800 font-extrabold">代班</div>
                                   )}
                                 </div>
                               ) : (
-                                <div className="text-[10px] text-slate-300 py-1">-</div>
+                                <div className="text-xs text-slate-300 py-1 font-medium">-</div>
                               )}
                             </td>
                           );
